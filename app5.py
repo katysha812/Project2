@@ -23,7 +23,6 @@ from reportlab.pdfbase.ttfonts import TTFont
 Base = declarative_base()
 
 
-# Модели данных (соответствуют вашей структуре БД)
 class Пользователи(Base):
     __tablename__ = 'пользователи'
     __table_args__ = {'schema': 'Проект2'}
@@ -454,7 +453,7 @@ class PaymentApp(QWidget):
             return
 
         try:
-            font_path = os.path.join(os.path.dirname(file))
+            font_path = os.path.join(os.path.dirname(__file__), "DejaVuSan.ttf")
             pdfmetrics.registerFont(TTFont('DejaVuSan', font_path))
             font_name = 'DejaVuSan'
         except:
@@ -602,15 +601,35 @@ class PaymentApp(QWidget):
             QMessageBox.warning(self, "Ошибка", "Неверный пин-код")
             return
 
-        # Проверка пароля с bcrypt
-        if not bcrypt.checkpw(self.passwordInput.text().encode('utf-8'), user.пароль.encode('utf-8')):
-            QMessageBox.warning(self, "Ошибка", "Неверный пароль")
-            return
+        # Проверка пароля
+        try:
+            password = self.passwordInput.text().encode('utf-8')
+            stored_password = user.пароль.encode('utf-8')
 
-        self.current_user_id = user.id
-        self.load_data()
-        self.login_dialog.accept()
-        self.mainBox.show()
+            # Проверяем, является ли stored_password bcrypt-хешем
+            if stored_password.startswith(b'$2b$'):
+                # Если это bcrypt-хеш, проверяем пароль
+                if not bcrypt.checkpw(password, stored_password):
+                    QMessageBox.warning(self, "Ошибка", "Неверный пароль")
+                    return
+            else:
+                # Если пароль в БД хранится в plaintext, сравниваем напрямую
+                if password != stored_password:
+                    QMessageBox.warning(self, "Ошибка", "Неверный пароль")
+                    return
+                # Можно автоматически обновить пароль в БД на хешированный
+                hashed_password = bcrypt.hashpw(password, bcrypt.gensalt())
+                user.пароль = hashed_password.decode('utf-8')
+                self.session.commit()
+
+            # Успешная аутентификация
+            self.current_user_id = user.id
+            self.load_data()
+            self.login_dialog.accept()
+            self.mainBox.show()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка аутентификации: {str(e)}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
